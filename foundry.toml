@@ -1,6 +1,7 @@
 [profile.default]
 src = "src"
+test = "test"
+script = "script"
 out = "out"
 libs = ["lib"]
-
-# See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+remappings = ["@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/", "@sp1-contracts/contracts=lib/sp1-contracts/contracts/"]
