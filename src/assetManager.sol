@@ -43,10 +43,12 @@ contract AssetManager is Ownable {
 
     /// @dev Struct for zk-based user minting data
     struct ZkUser {
-        uint256 mintPermitted;   // Total tokens permitted by zk-proof
-        uint256 mintedAmt;       // Tokens already minted via zk
-        bytes transactionHash;   // Doge transaction hash tied to zk-proof
+        uint256 mintedAmt;       // Tokens already minted via zk-proof
+        bytes32 latest_tx_hash;  // Latest Doge transaction hash tied to zk-proof
     }
+
+    /// @notice Mapping of Doge transaction hashes to their public values
+    mapping(bytes32 => uint256) public tx_values;
 
     /// @notice Mapping of address → whitelist data
     mapping(address => WhitelistedUser) public whitelist;
@@ -75,10 +77,14 @@ contract AssetManager is Ownable {
      * @dev Deploys AssetManager.
      * @param _tokenAddress Address of the ERC20 token contract.
      * @param initialOwner Address of the contract owner.
+     * @param _verifier Address of the zk-proof verifier contract.
+     * @param _dogeProgramVKey Program verification key for zk Doge proof.
      */
-    constructor(address _tokenAddress, address initialOwner) Ownable(initialOwner) {
+    constructor(address _tokenAddress, address initialOwner, address _verifier, bytes32 _dogeProgramVKey) Ownable(initialOwner) {
         require(_tokenAddress != address(0), "AssetManager: Invalid token address");
         token = IMyToken(_tokenAddress);
+        verifier = _verifier;
+        dogeProgramVKey = _dogeProgramVKey;
     }
 
     // --- Whitelist Management ---
@@ -145,16 +151,15 @@ contract AssetManager is Ownable {
         require(amount > 0, "AssetManager: Amount must be greater than zero");
 
         ZkUser storage user = zkUsers[msg.sender];
-        user.mintPermitted += amount;
-
-        require(user.mintPermitted > 0, "AssetManager: You are not whitelisted");
-        require(user.mintedAmt + amount <= user.mintPermitted, "AssetManager: Mint amount exceeds allowance");
-
+        
         user.mintedAmt += amount;
-        user.transactionHash = abi.encodePacked(txHash);
+        user.latest_tx_hash = txHash;
 
         // mark hash used before external call to mitigate reentrancy reuse
         usedDogeTxHashes[txHash] = true;
+
+        // Store the public values for this transaction
+        tx_values[txHash] = amount;
 
         token.mint(msg.sender, amount);
 
@@ -201,16 +206,6 @@ contract AssetManager is Ownable {
      */
     function getZkMintedAmount(address user) external view returns (uint256) {
         return zkUsers[user].mintedAmt;
-    }
-
-    /**
-     * @dev Returns how many tokens a user can still mint via zk-proof.
-     * @param user The address of the user.
-     * @return The remaining mintable amount.
-     */
-    function getZkMintableAmount(address user) external view returns (uint256) {
-        ZkUser storage zkUser = zkUsers[user];
-        return zkUser.mintPermitted - zkUser.mintedAmt;
     }
 
     /**
