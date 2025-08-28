@@ -9,10 +9,11 @@ import "../lib/forge-std/src/Script.sol";
 contract DeployScript is Script {
 
 
-    string tokenName = "TANO DOGE";
-    string tokenSymbol = "tDOGE";
-    address factoryAddress = 0x1158d09f180195E43813B807E5B864f66bEf5f91; // Replace with actual factory address
-
+    string tokenName = "TANO XRP";
+    string tokenSymbol = "tXRP";
+    address factoryAddress = 0x45b49B96F9beeAd93f79079F5ada63983F217fcc; // Replace with actual factory address
+    address verifier = 0x3B6041173B80E77f038f3F2C0f9744f04837185e; // Replace with actual verifier address
+    bytes32 programVKey = 0x0056d38b7c56e3af567ff96d8e335eb07668a7d3888fbfe67994c1df60f99402; // Replace with actual program VKey
 function run() external returns (address,address) {
         vm.startBroadcast();
         // Deploy the token contract
@@ -21,7 +22,7 @@ function run() external returns (address,address) {
         token.garntMinterRole(msg.sender);
         // Deploy the AssetManager contract using the factory
         TanoFactory factory = TanoFactory(factoryAddress);
-        address managerAddress = factory.createAssetManager(address(token));
+        address managerAddress = factory.createAssetManager(address(token),verifier,programVKey);
         vm.stopBroadcast();
         return (address(token), managerAddress);
 

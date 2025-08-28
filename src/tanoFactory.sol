@@ -18,11 +18,11 @@ contract TanoFactory {
      * @param tokenAddress The address of the MyToken contract for the new manager.
      * @return managerAddress The address of the newly created AssetManager.
      */
-    function createAssetManager(address tokenAddress) external returns (address managerAddress) {
+    function createAssetManager(address tokenAddress, address _verifier,bytes32 _ProgramVKey) external returns (address managerAddress) {
         require(tokenAddress != address(0), "Factory: Invalid token address");
         
         // The creator of the manager becomes its owner
-        AssetManager manager = new AssetManager(tokenAddress, msg.sender);
+        AssetManager manager = new AssetManager(tokenAddress, msg.sender,_verifier, _ProgramVKey);
         managerAddress = address(manager);
         
         deployedAssetManagers.push(managerAddress);
