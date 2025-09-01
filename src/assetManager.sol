@@ -15,14 +15,14 @@ interface IMyToken {
 }
 
 /**
- * @dev Struct holding public Dogecoin transaction values
+ * @dev Struct holding public Coin transaction values
  *      used for zk-proof verification.
  */
-struct PublicValuesDogeTx {
-    uint64 total_doge;            // Dogecoins in satoshis
+struct PublicValuesTx {
+    uint64 total_amount;            // Coins in smallest unit
     bytes32 sender_address_hash;  // SHA256 of sender address
     address owner_address;        // Owner address
-    bytes32 doge_tx_hash;         // Doge transaction hash
+    bytes32 tx_hash;         // Transaction hash
 }
 
 /**
@@ -44,10 +44,10 @@ contract AssetManager is Ownable {
     /// @dev Struct for zk-based user minting data
     struct ZkUser {
         uint256 mintedAmt;       // Tokens already minted via zk-proof
-        bytes32 latest_tx_hash;  // Latest Doge transaction hash tied to zk-proof
+        bytes32 latest_tx_hash;  // Latest transaction hash tied to zk-proof
     }
 
-    /// @notice Mapping of Doge transaction hashes to their public values
+    /// @notice Mapping of transaction hashes to their public values
     mapping(bytes32 => uint256) public tx_values;
 
     /// @notice Mapping of address → whitelist data
@@ -56,14 +56,17 @@ contract AssetManager is Ownable {
     /// @notice Mapping of address → zk-user data
     mapping(address => ZkUser) public zkUsers;
 
-    /// @notice Mapping of Doge transaction hashes to prevent reuse
-    mapping(bytes32 => bool) public usedDogeTxHashes;
+    /// @notice Mapping of transaction hashes to prevent reuse
+    mapping(bytes32 => bool) public usedTxHashes;
 
     /// @notice Verifier contract for zk-proofs
     address public verifier;
 
-    /// @notice Program verification key for zk Doge proof
-    bytes32 public dogeProgramVKey;
+    /// @notice Program verification key for zk proof
+    bytes32 public programVKey;
+
+    /// @notice Native token decimals
+    uint256 public nativeTokenDecimals;
 
     // --- Events ---
 
@@ -78,13 +81,16 @@ contract AssetManager is Ownable {
      * @param _tokenAddress Address of the ERC20 token contract.
      * @param initialOwner Address of the contract owner.
      * @param _verifier Address of the zk-proof verifier contract.
-     * @param _dogeProgramVKey Program verification key for zk Doge proof.
+     * @param _programVKey Program verification key for zk proof.
      */
-    constructor(address _tokenAddress, address initialOwner, address _verifier, bytes32 _dogeProgramVKey) Ownable(initialOwner) {
+    constructor(address _tokenAddress, address initialOwner, address _verifier, bytes32 _programVKey , uint256 _nativeTokenDecimals) Ownable(initialOwner) {
         require(_tokenAddress != address(0), "AssetManager: Invalid token address");
+        require(_verifier != address(0), "Invalid verifier");
+        require(_nativeTokenDecimals <= 18, "nativeTokenDecimals > 18");
         token = IMyToken(_tokenAddress);
         verifier = _verifier;
-        dogeProgramVKey = _dogeProgramVKey;
+        programVKey = _programVKey;
+        nativeTokenDecimals = _nativeTokenDecimals;
     }
 
     // --- Whitelist Management ---
@@ -129,7 +135,7 @@ contract AssetManager is Ownable {
     }
 
     /**
-     * @dev Allows minting based on zk-proof of a Dogecoin transaction.
+     * @dev Allows minting based on zk-proof of a transaction.
      * @param _proofBytes zk-proof bytes to be verified.
      * @param _publicValues Public input values for the proof, encoded.
      */
@@ -137,17 +143,18 @@ contract AssetManager is Ownable {
     
 
     function mintWithZk(bytes calldata _proofBytes, bytes calldata _publicValues) external {
-        PublicValuesDogeTx memory txResponse = verifyDogeProof(_publicValues, _proofBytes);
-        require(txResponse.total_doge > 0, "AssetManager: Invalid Doge transaction");
+        PublicValuesTx memory txResponse = verifyProof(_publicValues, _proofBytes);
+        require(txResponse.total_amount > 0, "AssetManager: Invalid transaction");
 
         // ensure the proof belongs to the caller
         require(txResponse.owner_address == msg.sender, "AssetManager: Proof owner mismatch");
 
-        bytes32 txHash = txResponse.doge_tx_hash;
-        require(!usedDogeTxHashes[txHash], "AssetManager: Doge tx hash already used");
+        bytes32 txHash = txResponse.tx_hash;
+        require(!usedTxHashes[txHash], "AssetManager: Tx hash already used");
 
-        // Convert Doge (8 decimals) to ERC20 (18 decimals)
-        uint256 amount = uint256(txResponse.total_doge) * 10**10;
+        // Convert Decimals to ERC20 (18 decimals)
+        uint256 scale = 10 ** (18 - nativeTokenDecimals); 
+        uint256 amount = uint256(txResponse.total_amount) * scale;
         require(amount > 0, "AssetManager: Amount must be greater than zero");
 
         ZkUser storage user = zkUsers[msg.sender];
@@ -156,7 +163,7 @@ contract AssetManager is Ownable {
         user.latest_tx_hash = txHash;
 
         // mark hash used before external call to mitigate reentrancy reuse
-        usedDogeTxHashes[txHash] = true;
+        usedTxHashes[txHash] = true;
 
         // Store the public values for this transaction
         tx_values[txHash] = amount;
@@ -228,26 +235,26 @@ contract AssetManager is Ownable {
     }
 
     /**
-     * @dev Verifies a Dogecoin zk-proof using the verifier contract.
+     * @dev Verifies a Coin zk-proof using the verifier contract.
      * @param _publicValues Encoded public values of the transaction.
      * @param _proofBytes zk-proof to validate.
-     * @return Struct containing decoded Doge transaction data.
+     * @return Struct containing decoded transaction data.
      */
-    function verifyDogeProof(
+    function verifyProof(
     bytes calldata _publicValues,
     bytes calldata _proofBytes
-) public view returns (PublicValuesDogeTx memory) {
+) public view returns (PublicValuesTx memory) {
     // 1. Verify the proof (reverts if invalid)
     ISP1Verifier(verifier).verifyProof(
-        dogeProgramVKey,
+        programVKey,
         _publicValues,
         _proofBytes
     );
 
     // 2. Decode the public values into your struct
-    PublicValuesDogeTx memory txResponse = abi.decode(
+    PublicValuesTx memory txResponse = abi.decode(
         _publicValues,
-        (PublicValuesDogeTx)
+        (PublicValuesTx)
     );
 
     return txResponse;
@@ -256,11 +263,11 @@ contract AssetManager is Ownable {
     // --- Owner-only Setters ---
 
     /**
-     * @dev Updates the zk Doge program verification key.
-     * @param _dogeProgramVKey New program verification key.
+     * @dev Updates the zk program verification key.
+     * @param _programVKey New program verification key.
      */
-    function changeDogeProgramVKey(bytes32 _dogeProgramVKey) public onlyOwner {
-        dogeProgramVKey = _dogeProgramVKey;
+    function changeProgramVKey(bytes32 _programVKey) public onlyOwner {
+        programVKey = _programVKey;
     }
 
     /**
