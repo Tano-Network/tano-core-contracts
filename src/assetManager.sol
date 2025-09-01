@@ -86,7 +86,7 @@ contract AssetManager is Ownable {
     constructor(address _tokenAddress, address initialOwner, address _verifier, bytes32 _programVKey , uint256 _nativeTokenDecimals) Ownable(initialOwner) {
         require(_tokenAddress != address(0), "AssetManager: Invalid token address");
         require(_verifier != address(0), "Invalid verifier");
-        require(_nativeTokenDecimals <= 18, "nativeTokenDecimals > 18");
+        require(_nativeTokenDecimals <= 18, "Decimals > 18");
         token = IMyToken(_tokenAddress);
         verifier = _verifier;
         programVKey = _programVKey;
