@@ -47,6 +47,9 @@ contract AssetManager is Ownable, IassetManager {
     /// @notice Program verification key for zk proof
     bytes32 public programVKey;
 
+    /// @notice Native token decimals
+    uint256 public nativeTokenDecimals;
+
     // --- Events ---
 
     event UserWhitelisted(address indexed user, uint256 allowance);
@@ -69,15 +72,19 @@ contract AssetManager is Ownable, IassetManager {
         address _tokenAddress,
         address initialOwner,
         address _verifier,
-        bytes32 _programVKey
+        bytes32 _programVKey,
+        uint256 _nativeTokenDecimals
     ) Ownable(initialOwner) {
         require(
             _tokenAddress != address(0),
             "AssetManager: Invalid token address"
         );
+        require(_verifier != address(0), "Invalid verifier");
+        require(_nativeTokenDecimals <= 18, "Decimals > 18");
         token = ItAsset(_tokenAddress);
         verifier = _verifier;
         programVKey = _programVKey;
+        nativeTokenDecimals = _nativeTokenDecimals;
     }
 
     // --- Whitelist Management ---
@@ -160,7 +167,8 @@ contract AssetManager is Ownable, IassetManager {
         require(!usedTxHashes[txHash], "AssetManager: tx hash already used");
 
         // Convert (8 decimals) to ERC20 (18 decimals)
-        uint256 amount = uint256(txResponse.total_amount) * 10 ** 10;
+        uint256 scale = 10 ** (18 - nativeTokenDecimals); 
+        uint256 amount = uint256(txResponse.total_amount) * scale;
         require(amount > 0, "AssetManager: Amount must be greater than zero");
 
         ZkUser storage user = zkUsers[msg.sender];
