@@ -2,6 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "./AssetManager.sol";
+import {ItAsset} from "./interface/ItAsset.sol";
 
 /**
  * @title AssetManagerFactory
@@ -9,7 +10,6 @@ import "./AssetManager.sol";
  */
 contract TanoFactory {
     address[] public deployedAssetManagers;
-
     event AssetManagerCreated(address indexed managerAddress, address indexed owner, address indexed tokenAddress);
 
     /**
@@ -26,18 +26,31 @@ contract TanoFactory {
         managerAddress = address(manager);
         
         deployedAssetManagers.push(managerAddress);
-        
+        ItAsset(tokenAddress).garntMinterRole(managerAddress);
         emit AssetManagerCreated(managerAddress, msg.sender, tokenAddress);
     }
 
+    /**
+     * @dev Returns the list of all deployed AssetManager addresses.
+     * @return An array of addresses of deployed AssetManager contracts.
+     */
     function getAssetManagers() external view returns (address[] memory) {
         return deployedAssetManagers;
     }
 
+    /**
+     * @dev Returns the total number of deployed AssetManager contracts.
+     * @return The count of deployed AssetManager contracts.
+     */
     function getAssetManagerCount() external view returns (uint256) {
         return deployedAssetManagers.length;
     }
 
+    /**
+     * @dev Returns the address of the AssetManager at a specific index.
+     * @param index The index of the AssetManager in the deployed list.
+     * @return The address of the AssetManager at the given index.
+     */ 
     function getAssetManagerAtIndex(uint256 index) external view returns (address) {
         require(index < deployedAssetManagers.length, "Factory: Index out of bounds");
         return deployedAssetManagers[index];

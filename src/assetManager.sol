@@ -3,48 +3,30 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@sp1-contracts/contracts/src/ISP1Verifier.sol";
+import {ItAsset} from "./interface/ItAsset.sol";
+import "./interface/IassetManager.sol";
 
-/**
- * @title IMyToken
- * @dev Interface for our ERC20 token contract.
- * Using an interface is a best practice for contract interaction.
- */
-interface IMyToken {
-    function mint(address to, uint256 amount) external;
-    function burnFrom(address from, uint256 amount) external;
-}
-
-/**
- * @dev Struct holding public coin transaction values
- *      used for zk-proof verification.
- */
-struct PublicValuesTx {
-    uint64 total_amount;            // amount in satoshis
-    bytes32 sender_address_hash;  // SHA256 of sender address
-    address owner_address;        // Owner address
-    bytes32 tx_hash;         // transaction hash
-}
 
 /**
  * @title AssetManager
  * @dev Manages user whitelists and orchestrates minting/burning of a specific ERC20 token.
  */
-contract AssetManager is Ownable {
+contract AssetManager is Ownable, IassetManager {
     // --- State Variables ---
 
     /// @dev ERC20 token contract being managed
-    IMyToken public immutable token;
+    ItAsset public immutable token;
 
     /// @dev Struct for whitelisted user data
     struct WhitelistedUser {
         uint256 mintAllowance; // Total tokens the user is allowed to mint.
-        uint256 mintedAmount;  // Total tokens the user has already minted.
+        uint256 mintedAmount; // Total tokens the user has already minted.
     }
 
     /// @dev Struct for zk-based user minting data
     struct ZkUser {
-        uint256 mintedAmt;       // Tokens already minted via zk-proof
-        bytes32 latest_tx_hash;  // Latest transaction hash tied to zk-proof
+        uint256 mintedAmt; // Tokens already minted via zk-proof
+        bytes32 latest_tx_hash; // Latest transaction hash tied to zk-proof
     }
 
     /// @notice Mapping of transaction hashes to their public values
@@ -70,6 +52,9 @@ contract AssetManager is Ownable {
     event UserWhitelisted(address indexed user, uint256 allowance);
     event TokensMinted(address indexed user, uint256 amount);
     event TokensBurned(address indexed user, uint256 amount);
+    event ZkProofVerified(address indexed user, bytes32 txHash);
+    event ProgramVKeyChanged(bytes32 newVKey);
+    event VerifierChanged(address newVerifier);
 
     // --- Constructor ---
 
@@ -80,9 +65,17 @@ contract AssetManager is Ownable {
      * @param _verifier Address of the zk-proof verifier contract.
      * @param _programVKey Program verification key for zk proof.
      */
-    constructor(address _tokenAddress, address initialOwner, address _verifier, bytes32 _programVKey) Ownable(initialOwner) {
-        require(_tokenAddress != address(0), "AssetManager: Invalid token address");
-        token = IMyToken(_tokenAddress);
+    constructor(
+        address _tokenAddress,
+        address initialOwner,
+        address _verifier,
+        bytes32 _programVKey
+    ) Ownable(initialOwner) {
+        require(
+            _tokenAddress != address(0),
+            "AssetManager: Invalid token address"
+        );
+        token = ItAsset(_tokenAddress);
         verifier = _verifier;
         programVKey = _programVKey;
     }
@@ -95,11 +88,14 @@ contract AssetManager is Ownable {
      * @param allowance The total number of tokens the user is permitted to mint.
      */
     function setWhitelist(address user, uint256 allowance) external onlyOwner {
-        require(user != address(0), "AssetManager: Cannot whitelist the zero address");
+        require(
+            user != address(0),
+            "AssetManager: Cannot whitelist the zero address"
+        );
 
         whitelist[user] = WhitelistedUser({
             mintAllowance: allowance,
-            mintedAmount: 0 
+            mintedAmount: 0
         });
 
         emit UserWhitelisted(user, allowance);
@@ -114,10 +110,16 @@ contract AssetManager is Ownable {
      */
     function mint(uint256 amount) external {
         WhitelistedUser storage user = whitelist[msg.sender];
-        
-        require(user.mintAllowance > 0, "AssetManager: You are not whitelisted");
+
+        require(
+            user.mintAllowance > 0,
+            "AssetManager: You are not whitelisted"
+        );
         require(amount > 0, "AssetManager: Amount must be greater than zero");
-        require(user.mintedAmount + amount <= user.mintAllowance, "AssetManager: Mint amount exceeds allowance");
+        require(
+            user.mintedAmount + amount <= user.mintAllowance,
+            "AssetManager: Mint amount exceeds allowance"
+        );
 
         // Update state
         user.mintedAmount += amount;
@@ -134,24 +136,35 @@ contract AssetManager is Ownable {
      * @param _publicValues Public input values for the proof, encoded.
      */
     // add to contract state
-    
 
-    function mintWithZk(bytes calldata _proofBytes, bytes calldata _publicValues) external {
-        PublicValuesTx memory txResponse = verifyProof(_publicValues, _proofBytes);
-        require(txResponse.total_amount > 0, "AssetManager: Invalid transaction");
+    function mintWithZk(
+        bytes calldata _proofBytes,
+        bytes calldata _publicValues
+    ) public {
+        PublicValuesTx memory txResponse = verifyProof(
+            _publicValues,
+            _proofBytes
+        );
+        require(
+            txResponse.total_amount > 0,
+            "AssetManager: Invalid transaction"
+        );
 
         // ensure the proof belongs to the caller
-        require(txResponse.owner_address == msg.sender, "AssetManager: Proof owner mismatch");
+        require(
+            txResponse.owner_address == msg.sender,
+            "AssetManager: Proof owner mismatch"
+        );
 
         bytes32 txHash = txResponse.tx_hash;
         require(!usedTxHashes[txHash], "AssetManager: tx hash already used");
 
         // Convert (8 decimals) to ERC20 (18 decimals)
-        uint256 amount = uint256(txResponse.total_amount) * 10**10;
+        uint256 amount = uint256(txResponse.total_amount) * 10 ** 10;
         require(amount > 0, "AssetManager: Amount must be greater than zero");
 
         ZkUser storage user = zkUsers[msg.sender];
-        
+
         user.mintedAmt += amount;
         user.latest_tx_hash = txHash;
 
@@ -179,7 +192,66 @@ contract AssetManager is Ownable {
         emit TokensBurned(msg.sender, amount);
     }
 
-    // --- View Functions ---
+    /**
+     * @dev Checks if a user is whitelisted.
+     * @param user The address of the user.
+     * @return True if user is whitelisted.
+     */
+    function isWhitelisted(address user) external view returns (bool) {
+        return whitelist[user].mintAllowance > 0;
+    }
+
+    /**
+     * @dev Verifies a coin zk-proof using the verifier contract.
+     * @param _publicValues Encoded public values of the transaction.
+     * @param _proofBytes zk-proof to validate.
+     * @return Struct containing decoded transaction data.
+     */
+    function verifyProof(
+        bytes calldata _publicValues,
+        bytes calldata _proofBytes
+    ) internal returns (PublicValuesTx memory) {
+        // 1. Verify the proof (reverts if invalid)
+        ISP1Verifier(verifier).verifyProof(
+            programVKey,
+            _publicValues,
+            _proofBytes
+        );
+
+        // 2. Decode the public values into your struct
+        PublicValuesTx memory txResponse = abi.decode(
+            _publicValues,
+            (PublicValuesTx)
+        );
+        emit ZkProofVerified(msg.sender, keccak256(_proofBytes));
+        return txResponse;
+    }
+
+    // --- Owner-only Setters ---
+
+    /**
+     * @dev Updates the zk program verification key.
+     * @param _programVKey New program verification key.
+     */
+    function changeProgramVKey(bytes32 _programVKey) external onlyOwner {
+        programVKey = _programVKey;
+        emit ProgramVKeyChanged(_programVKey);
+    }
+
+    /**
+     * @dev Sets the verifier contract address.
+     * @param _verifier Address of the new verifier.
+     */
+    function setVerifier(address _verifier) external onlyOwner {
+        require(
+            _verifier != address(0),
+            "AssetManager: Invalid verifier address"
+        );
+        verifier = _verifier;
+        emit VerifierChanged(_verifier);
+    }
+
+    // --- Getter Functions ---
 
     /**
      * @dev Returns the total allowance a user has been granted.
@@ -219,56 +291,22 @@ contract AssetManager is Ownable {
     }
 
     /**
-     * @dev Checks if a user is whitelisted.
-     * @param user The address of the user.
-     * @return True if user is whitelisted.
+     * @dev Returns verifier address that used to verify the proof.
+     * @return returns the verifier address.
      */
-    function isWhitelisted(address user) external view returns (bool) {
-        return whitelist[user].mintAllowance > 0;
+    function getVerifier() external view returns (address) {
+        return verifier;
     }
 
     /**
-     * @dev Verifies a coin zk-proof using the verifier contract.
-     * @param _publicValues Encoded public values of the transaction.
-     * @param _proofBytes zk-proof to validate.
-     * @return Struct containing decoded transaction data.
+     * @dev Returns programVKey  that used to verify the proof.
+     * @return returns the programVKey.
      */
-    function verifyProof(
-    bytes calldata _publicValues,
-    bytes calldata _proofBytes
-) public view returns (PublicValuesTx memory) {
-    // 1. Verify the proof (reverts if invalid)
-    ISP1Verifier(verifier).verifyProof(
-        programVKey,
-        _publicValues,
-        _proofBytes
-    );
-
-    // 2. Decode the public values into your struct
-    PublicValuesTx memory txResponse = abi.decode(
-        _publicValues,
-        (PublicValuesTx)
-    );
-
-    return txResponse;
-}
-
-    // --- Owner-only Setters ---
-
-    /**
-     * @dev Updates the zk program verification key.
-     * @param _programVKey New program verification key.
-     */
-    function changeProgramVKey(bytes32 _programVKey) public onlyOwner {
-        programVKey = _programVKey;
+    function getProgramVKey() external view returns (bytes32) {
+        return programVKey;
     }
 
-    /**
-     * @dev Sets the verifier contract address.
-     * @param _verifier Address of the new verifier.
-     */
-    function setVerifier(address _verifier) public onlyOwner {
-        require(_verifier != address(0), "AssetManager: Invalid verifier address");
-        verifier = _verifier;
+    function getAsset() external view returns (address){
+        return address(token);
     }
 }
