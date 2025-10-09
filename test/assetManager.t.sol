@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Test, console} from "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {AssetManager} from "../src/assetManager.sol";
-import {tAsset} from "../src/tAsset.sol";
+import {TAsset} from "../src/tAsset.sol";
 
 contract AssetManagerTest is Test {
     AssetManager public manager;
-    tAsset public token;
+    TAsset public token;
     address public admin;
     address public user1;
     address public user2;
+    address public verifier;
     
     event UserWhitelisted(address indexed user, uint256 allowance);
     event TokensMinted(address indexed user, uint256 amount);
@@ -20,12 +21,13 @@ contract AssetManagerTest is Test {
         admin = address(this);
         user1 = address(0x1);
         user2 = address(0x2);
+        verifier = makeAddr("verifier");
         
-        token = new tAsset("Tano Asset", "TASSET");
-        manager = new AssetManager(address(token), admin);
+        token = new TAsset("Tano Asset", "TASSET");
+        manager = new AssetManager(address(token), admin, verifier, bytes32(0), 18);
         
         // Grant minter role to the manager
-        token.garntMinterRole(address(manager));
+        token.grantMinterRole(address(manager));
         
         // Label addresses for better trace output
         vm.label(admin, "Admin");
@@ -33,11 +35,12 @@ contract AssetManagerTest is Test {
         vm.label(user2, "User2");
         vm.label(address(token), "Token");
         vm.label(address(manager), "Manager");
+        vm.label(verifier, "Verifier");
     }
     
     // Test initial state
     function testInitialState() public view {
-        assertEq(address(manager.token()), address(token));
+        assertEq(address(manager.TOKEN()), address(token));
         assertEq(manager.owner(), admin);
         assertFalse(manager.isWhitelisted(user1));
         assertFalse(manager.isWhitelisted(user2));
@@ -260,4 +263,40 @@ contract AssetManagerTest is Test {
         vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", admin));
         manager.setWhitelist(user1, 1000 * 10**18);
     }
-} 
+
+    // Test ZK minted amount
+    function testInitialZkMintedAmount() public view {
+        assertEq(manager.getZkMintedAmount(user1), 0);
+    }
+
+    // Test changing program VKey
+    function testChangeProgramVKey() public {
+        bytes32 newVKey = keccak256("newVKey");
+        manager.changeProgramVKey(newVKey);
+        assertEq(manager.programVKey(), newVKey);
+    }
+
+    function test_RevertWhen_NonOwnerChangesProgramVKey() public {
+        vm.prank(user1);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", user1));
+        manager.changeProgramVKey(keccak256("newVKey"));
+    }
+
+    // Test setting verifier
+    function testSetVerifier() public {
+        address newVerifier = makeAddr("newVerifier");
+        manager.setVerifier(newVerifier);
+        assertEq(manager.verifier(), newVerifier);
+    }
+
+    function test_RevertWhen_NonOwnerSetsVerifier() public {
+        vm.prank(user1);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", user1));
+        manager.setVerifier(makeAddr("newVerifier"));
+    }
+
+    function test_RevertWhen_SettingZeroAddressVerifier() public {
+        vm.expectRevert("AssetManager: Invalid verifier address");
+        manager.setVerifier(address(0));
+    }
+}

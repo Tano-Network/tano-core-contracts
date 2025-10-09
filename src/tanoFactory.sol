@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "./AssetManager.sol";
+import {AssetManager} from "./assetManager.sol";
 
 /**
  * @title AssetManagerFactory
@@ -16,13 +16,16 @@ contract TanoFactory {
      * @dev Deploys a new AssetManager contract.
      * The caller (msg.sender) will become the owner of the new AssetManager.
      * @param tokenAddress The address of the MyToken contract for the new manager.
+     * @param verifier The address of the verifier contract.
+     * @param programVKey The verification key for the zk-SNARK program.
+     * @param nativeTokenDecimals The number of decimals for the native token.
      * @return managerAddress The address of the newly created AssetManager.
      */
-    function createAssetManager(address tokenAddress) external returns (address managerAddress) {
+    function createAssetManager(address tokenAddress, address verifier, bytes32 programVKey, uint256 nativeTokenDecimals) external returns (address managerAddress) {
         require(tokenAddress != address(0), "Factory: Invalid token address");
         
         // The creator of the manager becomes its owner
-        AssetManager manager = new AssetManager(tokenAddress, msg.sender);
+        AssetManager manager = new AssetManager(tokenAddress, msg.sender, verifier, programVKey, nativeTokenDecimals);
         managerAddress = address(manager);
         
         deployedAssetManagers.push(managerAddress);

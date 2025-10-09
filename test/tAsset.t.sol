@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Test, console} from "forge-std/Test.sol";
-import {tAsset} from "../src/tAsset.sol";
+import {Test} from "forge-std/Test.sol";
+import {TAsset} from "../src/tAsset.sol";
 
 contract TAssetTest is Test {
-    tAsset public token;
+    TAsset public token;
     address public admin;
     address public minter;
     address public user;
@@ -18,7 +18,7 @@ contract TAssetTest is Test {
         minter = address(0x1);
         user = address(0x2);
         
-        token = new tAsset("Tano Asset", "TASSET");
+        token = new TAsset("Tano Asset", "TASSET");
         
         // Label addresses for better trace output in test logs
         vm.label(admin, "Admin");
@@ -37,13 +37,13 @@ contract TAssetTest is Test {
     
     // Test granting minter role
     function testGrantMinterRole() public {
-        token.garntMinterRole(minter);
+        token.grantMinterRole(minter);
         assertTrue(token.hasRole(token.MINTER_ROLE(), minter));
     }
     
     // Test minting as minter
     function testMintAsMinter() public {
-        token.garntMinterRole(minter);
+        token.grantMinterRole(minter);
         
         // Set msg.sender to minter for all subsequent calls until stopPrank is called
         vm.startPrank(minter);
@@ -70,7 +70,7 @@ contract TAssetTest is Test {
     
     // Test burning
     function testBurn() public {
-        token.garntMinterRole(minter);
+        token.grantMinterRole(minter);
         
         // Set msg.sender to minter for the next call only
         vm.prank(minter);
@@ -88,7 +88,7 @@ contract TAssetTest is Test {
     
     // Test burnFrom with approval
     function testBurnFrom() public {
-        token.garntMinterRole(minter);
+        token.grantMinterRole(minter);
         vm.prank(minter);
         uint256 mintAmount = 1000 * 10**18;
         token.mint(user, mintAmount);
@@ -106,7 +106,7 @@ contract TAssetTest is Test {
     
     // Test transfer
     function testTransfer() public {
-        token.garntMinterRole(minter);
+        token.grantMinterRole(minter);
         vm.prank(minter);
         uint256 mintAmount = 1000 * 10**18;
         token.mint(user, mintAmount);
@@ -118,7 +118,7 @@ contract TAssetTest is Test {
         vm.expectEmit(true, true, false, true);
         emit Transfer(user, minter, transferAmount);
         
-        token.transfer(minter, transferAmount);
+        require(token.transfer(minter, transferAmount), "transfer failed");
         
         assertEq(token.balanceOf(user), mintAmount - transferAmount);
         assertEq(token.balanceOf(minter), transferAmount);
@@ -126,7 +126,7 @@ contract TAssetTest is Test {
     
     // Test transferFrom with approval
     function testTransferFrom() public {
-        token.garntMinterRole(minter);
+        token.grantMinterRole(minter);
         vm.prank(minter);
         uint256 mintAmount = 1000 * 10**18;
         token.mint(user, mintAmount);
@@ -140,7 +140,7 @@ contract TAssetTest is Test {
         vm.expectEmit(true, true, false, true);
         emit Transfer(user, minter, transferAmount);
         
-        token.transferFrom(user, minter, transferAmount);
+        require(token.transferFrom(user, minter, transferAmount), "transferFrom failed");
         
         assertEq(token.balanceOf(user), mintAmount - transferAmount);
         assertEq(token.balanceOf(minter), transferAmount);
@@ -149,7 +149,7 @@ contract TAssetTest is Test {
     
     // Test revoking minter role
     function testRevokeMinterRole() public {
-        token.garntMinterRole(minter);
+        token.grantMinterRole(minter);
         assertTrue(token.hasRole(token.MINTER_ROLE(), minter));
         
         bytes32 minterRole = token.MINTER_ROLE();
@@ -166,6 +166,6 @@ contract TAssetTest is Test {
     function test_RevertWhen_NonAdminGrantsMinterRole() public {
         vm.prank(user);
         vm.expectRevert("MyToken: caller is not an admin");
-        token.garntMinterRole(minter);
+        token.grantMinterRole(minter);
     }
-} 
+}

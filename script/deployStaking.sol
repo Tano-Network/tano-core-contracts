@@ -2,8 +2,8 @@ pragma solidity ^0.8.20;
 
 
 // import "../src/assetManager.sol";
-import "../src/stakingModule.sol";
-import "../lib/forge-std/src/Script.sol";
+import {StakingModule} from "../src/stakingModule.sol";
+import {Script} from "../lib/forge-std/src/Script.sol";
 
 contract DeployScript is Script {
 
