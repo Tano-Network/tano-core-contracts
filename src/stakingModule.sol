@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
  * @title StakingModule
@@ -12,7 +12,7 @@ contract StakingModule {
     // --- State Variables ---
 
     // The ERC20 token that will be staked
-    IERC20 public immutable stakingToken;
+    IERC20 public immutable STAKING_TOKEN;
 
     // Total amount of tokens staked in the contract
     uint256 public totalStaked;
@@ -44,7 +44,7 @@ contract StakingModule {
      */
     constructor(address _stakingToken) {
         require(_stakingToken != address(0), "StakingModule: Staking token cannot be the zero address");
-        stakingToken = IERC20(_stakingToken);
+        STAKING_TOKEN = IERC20(_stakingToken);
     }
 
     // --- Staking Functions ---
@@ -59,7 +59,7 @@ contract StakingModule {
 
         // The contract needs to be approved to transfer tokens on behalf of the user
         // This transfer will fail if the user has not approved enough tokens
-        bool success = stakingToken.transferFrom(msg.sender, address(this), _amount);
+        bool success = STAKING_TOKEN.transferFrom(msg.sender, address(this), _amount);
         require(success, "StakingModule: Token transfer failed. Check allowance.");
 
         // Update user's staked balance and total staked amount
@@ -82,7 +82,7 @@ contract StakingModule {
         totalStaked = totalStaked-_amount;
     
         // Transfer the tokens back to the user
-        bool success = stakingToken.transfer(msg.sender, _amount);
+        bool success = STAKING_TOKEN.transfer(msg.sender, _amount);
         require(success, "StakingModule: Token transfer failed.");
 
         emit Withdrawn(msg.sender, _amount);

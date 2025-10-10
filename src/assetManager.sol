@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@sp1-contracts/contracts/src/ISP1Verifier.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import { ISP1Verifier } from "@sp1-contracts/contracts/src/ISP1Verifier.sol";
 
 /**
  * @title IMyToken
@@ -19,10 +19,10 @@ interface IMyToken {
  *      used for zk-proof verification.
  */
 struct PublicValuesTx {
-    uint64 total_amount;            // Coins in smallest unit
-    bytes32 sender_address_hash;  // SHA256 of sender address
-    address owner_address;        // Owner address
-    bytes32 tx_hash;         // Transaction hash
+    uint64 totalAmount;            // Coins in smallest unit
+    bytes32 senderAddressHash;  // SHA256 of sender address
+    address ownerAddress;        // Owner address
+    bytes32 txHash;         // Transaction hash
 }
 
 /**
@@ -33,7 +33,7 @@ contract AssetManager is Ownable {
     // --- State Variables ---
 
     /// @dev ERC20 token contract being managed
-    IMyToken public immutable token;
+    IMyToken public immutable TOKEN;
 
     /// @dev Struct for whitelisted user data
     struct WhitelistedUser {
@@ -43,12 +43,12 @@ contract AssetManager is Ownable {
 
     /// @dev Struct for zk-based user minting data
     struct ZkUser {
-        uint256 mintedAmt;       // Tokens already minted via zk-proof
-        bytes32 latest_tx_hash;  // Latest transaction hash tied to zk-proof
+        uint256 mintedAmount;       // Tokens already minted via zk-proof
+        bytes32 latestTxHash;  // Latest transaction hash tied to zk-proof
     }
 
     /// @notice Mapping of transaction hashes to their public values
-    mapping(bytes32 => uint256) public tx_values;
+    mapping(bytes32 => uint256) public txValues;
 
     /// @notice Mapping of address → whitelist data
     mapping(address => WhitelistedUser) public whitelist;
@@ -87,7 +87,7 @@ contract AssetManager is Ownable {
         require(_tokenAddress != address(0), "AssetManager: Invalid token address");
         require(_verifier != address(0), "Invalid verifier");
         require(_nativeTokenDecimals <= 18, "Decimals > 18");
-        token = IMyToken(_tokenAddress);
+        TOKEN = IMyToken(_tokenAddress);
         verifier = _verifier;
         programVKey = _programVKey;
         nativeTokenDecimals = _nativeTokenDecimals;
@@ -105,7 +105,7 @@ contract AssetManager is Ownable {
 
         whitelist[user] = WhitelistedUser({
             mintAllowance: allowance,
-            mintedAmount: 0 
+            mintedAmount: 0
         });
 
         emit UserWhitelisted(user, allowance);
@@ -129,7 +129,7 @@ contract AssetManager is Ownable {
         user.mintedAmount += amount;
 
         // Mint tokens
-        token.mint(msg.sender, amount);
+        TOKEN.mint(msg.sender, amount);
 
         emit TokensMinted(msg.sender, amount);
     }
@@ -144,31 +144,31 @@ contract AssetManager is Ownable {
 
     function mintWithZk(bytes calldata _proofBytes, bytes calldata _publicValues) external {
         PublicValuesTx memory txResponse = verifyProof(_publicValues, _proofBytes);
-        require(txResponse.total_amount > 0, "AssetManager: Invalid transaction");
+        require(txResponse.totalAmount > 0, "AssetManager: Invalid transaction");
 
         // ensure the proof belongs to the caller
-        require(txResponse.owner_address == msg.sender, "AssetManager: Proof owner mismatch");
+        require(txResponse.ownerAddress == msg.sender, "AssetManager: Proof owner mismatch");
 
-        bytes32 txHash = txResponse.tx_hash;
+        bytes32 txHash = txResponse.txHash;
         require(!usedTxHashes[txHash], "AssetManager: Tx hash already used");
 
         // Convert Decimals to ERC20 (18 decimals)
         uint256 scale = 10 ** (18 - nativeTokenDecimals); 
-        uint256 amount = uint256(txResponse.total_amount) * scale;
+        uint256 amount = uint256(txResponse.totalAmount) * scale;
         require(amount > 0, "AssetManager: Amount must be greater than zero");
 
         ZkUser storage user = zkUsers[msg.sender];
         
-        user.mintedAmt += amount;
-        user.latest_tx_hash = txHash;
+        user.mintedAmount += amount;
+        user.latestTxHash = txHash;
 
         // mark hash used before external call to mitigate reentrancy reuse
         usedTxHashes[txHash] = true;
 
         // Store the public values for this transaction
-        tx_values[txHash] = amount;
+        txValues[txHash] = amount;
 
-        token.mint(msg.sender, amount);
+        TOKEN.mint(msg.sender, amount);
 
         emit TokensMinted(msg.sender, amount);
     }
@@ -181,7 +181,7 @@ contract AssetManager is Ownable {
     function burn(uint256 amount) external {
         require(amount > 0, "AssetManager: Amount must be greater than zero");
 
-        token.burnFrom(msg.sender, amount);
+        TOKEN.burnFrom(msg.sender, amount);
 
         emit TokensBurned(msg.sender, amount);
     }
@@ -212,7 +212,7 @@ contract AssetManager is Ownable {
      * @return The total minted amount.
      */
     function getZkMintedAmount(address user) external view returns (uint256) {
-        return zkUsers[user].mintedAmt;
+        return zkUsers[user].mintedAmount;
     }
 
     /**

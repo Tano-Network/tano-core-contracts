@@ -1,24 +1,26 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Test, console} from "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {TanoFactory} from "../src/tanoFactory.sol";
-import {tAsset} from "../src/tAsset.sol";
+import {TAsset} from "../src/tAsset.sol";
 import {AssetManager} from "../src/assetManager.sol";
 
 contract TanoFactoryTest is Test {
     TanoFactory public factory;
-    tAsset public token;
+    TAsset public token;
     address public admin;
     address public user;
+    address public verifier;
     
     event AssetManagerCreated(address indexed managerAddress, address indexed owner, address indexed tokenAddress);
     
     function setUp() public {
         admin = address(this);
         user = address(0x1);
+        verifier = makeAddr("verifier");
         
-        token = new tAsset("Tano Asset", "TASSET");
+        token = new TAsset("Tano Asset", "TASSET");
         factory = new TanoFactory();
         
         // Label addresses for better trace output
@@ -26,6 +28,7 @@ contract TanoFactoryTest is Test {
         vm.label(user, "User");
         vm.label(address(token), "Token");
         vm.label(address(factory), "Factory");
+        vm.label(verifier, "Verifier");
     }
     
     // Test initial state
@@ -35,7 +38,7 @@ contract TanoFactoryTest is Test {
     
     // Test creating an asset manager
     function testCreateAssetManager() public {
-        address managerAddress = factory.createAssetManager(address(token));
+        address managerAddress = factory.createAssetManager(address(token), verifier, bytes32(0), 18);
         
         // Verify asset manager was created and stored
         assertEq(factory.getAssetManagerCount(), 1);
@@ -45,18 +48,18 @@ contract TanoFactoryTest is Test {
         
         // Verify asset manager properties
         AssetManager manager = AssetManager(managerAddress);
-        assertEq(address(manager.token()), address(token));
+        assertEq(address(manager.TOKEN()), address(token));
         assertEq(manager.owner(), admin);
     }
     
     // Test creating multiple asset managers
     function testCreateMultipleAssetManagers() public {
         // Create first asset manager as admin
-        address manager1 = factory.createAssetManager(address(token));
+        address manager1 = factory.createAssetManager(address(token), verifier, bytes32(0), 18);
         
         // Create second asset manager as user
         vm.prank(user);
-        address manager2 = factory.createAssetManager(address(token));
+        address manager2 = factory.createAssetManager(address(token), verifier, bytes32(0), 18);
         
         // Verify asset managers were created and stored
         assertEq(factory.getAssetManagerCount(), 2);
@@ -74,12 +77,12 @@ contract TanoFactoryTest is Test {
     // Test creating an asset manager with invalid token address
     function test_RevertWhen_CreatingManagerWithZeroAddress() public {
         vm.expectRevert("Factory: Invalid token address");
-        factory.createAssetManager(address(0));
+        factory.createAssetManager(address(0), verifier, bytes32(0), 18);
     }
     
     // Test accessing asset manager at invalid index
     function test_RevertWhen_AccessingInvalidIndex() public {
-        factory.createAssetManager(address(token));
+        factory.createAssetManager(address(token), verifier, bytes32(0), 18);
         
         vm.expectRevert("Factory: Index out of bounds");
         factory.getAssetManagerAtIndex(1);
@@ -87,11 +90,11 @@ contract TanoFactoryTest is Test {
     
     // Test full integration with asset manager functionality
     function testIntegrationWithAssetManager() public {
-        address managerAddress = factory.createAssetManager(address(token));
+        address managerAddress = factory.createAssetManager(address(token), verifier, bytes32(0), 18);
         AssetManager manager = AssetManager(managerAddress);
         
         // Grant minter role to the asset manager
-        token.garntMinterRole(managerAddress);
+        token.grantMinterRole(managerAddress);
         
         // Set up whitelist for user
         uint256 allowance = 1000 * 10**18;
@@ -104,4 +107,4 @@ contract TanoFactoryTest is Test {
         // Verify tokens were minted
         assertEq(token.balanceOf(user), 500 * 10**18);
     }
-} 
+}
