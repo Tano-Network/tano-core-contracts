@@ -53,6 +53,7 @@ contract StakingModule {
         return
             rewardPerTokenStored + 
             ((block.timestamp - lastUpdateTime) * rewardRatePerSecond * 1e18 / totalStaked);
+
     }
 
     // Calculate the earned rewards for a user
