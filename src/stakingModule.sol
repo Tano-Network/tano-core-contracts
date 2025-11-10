@@ -1,101 +1,112 @@
 // SPDX-License-Identifier: MIT
+
 pragma solidity ^0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /**
- * @title StakingModule
- * @dev A simple staking contract where users can deposit and withdraw ERC20 tokens.
- */
+* @title StakingModule
+* @dev A staking contract with rewards where users deposit ERC20 tokens and earn proportional rewards.
+*/
 contract StakingModule {
-
-    // --- State Variables ---
-
-    // The ERC20 token that will be staked
     IERC20 public immutable STAKING_TOKEN;
+    IERC20 public immutable REWARD_TOKEN;
 
-    // Total amount of tokens staked in the contract
     uint256 public totalStaked;
+    uint256 public rewardRatePerSecond; // reward tokens distributed per second across all stakers
+    uint256 public lastUpdateTime;
+    uint256 public rewardPerTokenStored;
 
-    // Mapping from user address to their staked balance
     mapping(address => uint256) public stakedBalance;
+    mapping(address => uint256) public userRewardPerTokenPaid;
+    mapping(address => uint256) public rewards;
 
-    // --- Events ---
-
-    /**
-     * @dev Emitted when a user deposits tokens.
-     * @param user The address of the user who deposited.
-     * @param amount The amount of tokens deposited.
-     */
     event Staked(address indexed user, uint256 amount);
-
-    /**
-     * @dev Emitted when a user withdraws tokens.
-     * @param user The address of the user who withdrew.
-     * @param amount The amount of tokens withdrawn.
-     */
     event Withdrawn(address indexed user, uint256 amount);
+    event RewardPaid(address indexed user, uint256 reward);
+    event RewardRateUpdated(uint256 newRewardRate);
 
-    // --- Constructor ---
-
-    /**
-     * @dev Sets the staking token address upon deployment.
-     * @param _stakingToken The address of the ERC20 token to be used for staking.
-     */
-    constructor(address _stakingToken) {
-        require(_stakingToken != address(0), "StakingModule: Staking token cannot be the zero address");
+    constructor(address _stakingToken, address _rewardToken, uint256 _rewardRatePerSecond) {
+        require(_stakingToken != address(0) && _rewardToken != address(0), "Invalid token address");
         STAKING_TOKEN = IERC20(_stakingToken);
+        REWARD_TOKEN = IERC20(_rewardToken);
+        rewardRatePerSecond = _rewardRatePerSecond;
+        lastUpdateTime = block.timestamp;
     }
 
-    // --- Staking Functions ---
+    modifier updateReward(address account) {
+        rewardPerTokenStored = rewardPerToken();
+        lastUpdateTime = block.timestamp;
 
-    /**
-     * @dev Allows a user to deposit tokens into the staking contract.
-     * The user must first approve the contract to spend the tokens.
-     * @param _amount The amount of tokens to stake.
-     */
-    function deposit(uint256 _amount) external {
-        require(_amount > 0, "StakingModule: Cannot stake 0 tokens");
-
-        // The contract needs to be approved to transfer tokens on behalf of the user
-        // This transfer will fail if the user has not approved enough tokens
-        bool success = STAKING_TOKEN.transferFrom(msg.sender, address(this), _amount);
-        require(success, "StakingModule: Token transfer failed. Check allowance.");
-
-        // Update user's staked balance and total staked amount
-        stakedBalance[msg.sender] = stakedBalance[msg.sender]+ _amount;
-        totalStaked = totalStaked+_amount;
-
-        emit Staked(msg.sender, _amount);
+        if (account != address(0)) {
+            rewards[account] = earned(account);
+            userRewardPerTokenPaid[account] = rewardPerTokenStored;
+        }
+        _;
     }
 
-    /**
-     * @dev Allows a user to withdraw their staked tokens.
-     * @param _amount The amount of tokens to withdraw.
-     */
-    function withdraw(uint256 _amount) external {
-        require(_amount > 0, "StakingModule: Cannot withdraw 0 tokens");
-        require(stakedBalance[msg.sender] >= _amount, "StakingModule: Insufficient staked balance");
+    // Calculate accumulated rewards per token staked
+    function rewardPerToken() public view returns (uint256) {
+        if (totalStaked == 0) {
+            return rewardPerTokenStored;
+        }
+        return
+            rewardPerTokenStored + 
+            ((block.timestamp - lastUpdateTime) * rewardRatePerSecond * 1e18 / totalStaked);
 
-        // Update user's staked balance and total staked amount first to prevent re-entrancy attacks
-        stakedBalance[msg.sender] = stakedBalance[msg.sender] - _amount;
-        totalStaked = totalStaked-_amount;
-    
-        // Transfer the tokens back to the user
-        bool success = STAKING_TOKEN.transfer(msg.sender, _amount);
-        require(success, "StakingModule: Token transfer failed.");
-
-        emit Withdrawn(msg.sender, _amount);
     }
 
-    // --- View Functions ---
+    // Calculate the earned rewards for a user
+    function earned(address account) public view returns (uint256) {
+        return
+            (stakedBalance[account] * (rewardPerToken() - userRewardPerTokenPaid[account]) / 1e18) +
+            rewards[account];
+    }
 
-    /**
-     * @dev Returns the staked balance of a specific user.
-     * @param _user The address of the user.
-     * @return The amount of tokens staked by the user.
-     */
-    function getStakedBalance(address _user) external view returns (uint256) {
-        return stakedBalance[_user];
+    // Stake tokens
+    function deposit(uint256 amount) external updateReward(msg.sender) {
+        require(amount > 0, "Cannot stake 0 tokens");
+        require(STAKING_TOKEN.transferFrom(msg.sender, address(this), amount), "Transfer failed");
+
+        stakedBalance[msg.sender] += amount;
+        totalStaked += amount;
+        emit Staked(msg.sender, amount);
+    }
+
+    // Withdraw staked tokens
+    function withdraw(uint256 amount) external updateReward(msg.sender) {
+        require(amount > 0, "Cannot withdraw 0 tokens");
+        require(stakedBalance[msg.sender] >= amount, "Insufficient balance");
+
+        stakedBalance[msg.sender] -= amount;
+        totalStaked -= amount;
+        require(STAKING_TOKEN.transfer(msg.sender, amount), "Transfer failed");
+        emit Withdrawn(msg.sender, amount);
+    }
+
+    // Claim accumulated rewards
+    function claimReward() external updateReward(msg.sender) {
+        uint256 reward = rewards[msg.sender];
+        require(reward > 0, "No rewards to claim");
+
+        rewards[msg.sender] = 0;
+        require(REWARD_TOKEN.transfer(msg.sender, reward), "Reward transfer failed");
+        emit RewardPaid(msg.sender, reward);
+    }
+
+    // Update the reward rate
+    function setRewardRate(uint256 newRewardRate) external updateReward(address(0)) {
+        rewardRatePerSecond = newRewardRate;
+        emit RewardRateUpdated(newRewardRate);
+    }
+
+    // View function to get staked balance for user
+    function getStakedBalance(address user) external view returns (uint256) {
+        return stakedBalance[user];
+    }
+
+    // View function to get rewards accumulated (not yet claimed)
+    function getRewards(address user) external view returns (uint256) {
+        return earned(user);
     }
 }
