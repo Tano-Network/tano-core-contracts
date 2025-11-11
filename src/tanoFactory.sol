@@ -54,4 +54,8 @@ contract TanoFactory is Ownable {
         require(index < deployedAssetManagers.length, "Factory: Index out of bounds");
         return deployedAssetManagers[index];
     }
+
+    function transferFactoryOwnership(address newOwner) external onlyOwner {
+        transferOwnership(newOwner);
+    }
 }
