@@ -72,12 +72,12 @@ contract AssetManagerTest is Test {
         
         // Update allowance
         uint256 newAllowance = 2000 * 10**18;
+        vm.expectRevert("AssetManager: User already whitelisted");
         manager.setWhitelist(user1, newAllowance);
         
         // Check that minted amount was reset
-        assertEq(manager.getAllowance(user1), newAllowance);
-        assertEq(manager.getMintedAmount(user1), 0);
-        assertEq(manager.getMintableAmount(user1), newAllowance);
+        assertEq(manager.getMintedAmount(user1), 500 * 10**18);
+        assertEq(manager.getMintableAmount(user1),initialAllowance - 500 * 10**18);
     }
     
     // Test non-owner cannot whitelist

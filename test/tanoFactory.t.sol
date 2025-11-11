@@ -58,20 +58,38 @@ contract TanoFactoryTest is Test {
         address manager1 = factory.createAssetManager(address(token), verifier, bytes32(0), 18);
         
         // Create second asset manager as user
-        vm.prank(user);
+        vm.prank(admin);
+        vm.expectRevert("Factory: AssetManager for this token already exists");
         address manager2 = factory.createAssetManager(address(token), verifier, bytes32(0), 18);
-        
+
         // Verify asset managers were created and stored
-        assertEq(factory.getAssetManagerCount(), 2);
+        assertEq(factory.getAssetManagerCount(), 1);
         address[] memory managers = factory.getAssetManagers();
         assertEq(managers[0], manager1);
-        assertEq(managers[1], manager2);
+        // Verify asset managers were created and stored
+
+        AssetManager firstManager = AssetManager(manager1);
+        assertEq(firstManager.owner(), admin);
+    }
+
+    function testRevert_WhenCreateAssetManagerFromNonOwner() public {
+        // Create first asset manager as admin
+        address manager1 = factory.createAssetManager(address(token), verifier, bytes32(0), 18);
+        
+        // Create second asset manager as user
+        vm.prank(user);
+        vm.expectRevert("OwnableUnauthorizedAccount(0x0000000000000000000000000000000000000001)");
+        factory.createAssetManager(address(token), verifier, bytes32(0), 18);
+
+        // Verify asset managers were created and stored
+        assertEq(factory.getAssetManagerCount(), 1);
+        address[] memory managers = factory.getAssetManagers();
+        assertEq(managers[0], manager1);
         
         // Verify each asset manager has the correct owner
         AssetManager firstManager = AssetManager(manager1);
-        AssetManager secondManager = AssetManager(manager2);
         assertEq(firstManager.owner(), admin);
-        assertEq(secondManager.owner(), user);
+
     }
     
     // Test creating an asset manager with invalid token address
@@ -107,4 +125,5 @@ contract TanoFactoryTest is Test {
         // Verify tokens were minted
         assertEq(token.balanceOf(user), 500 * 10**18);
     }
+
 }
