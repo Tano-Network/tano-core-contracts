@@ -110,6 +110,37 @@ contract AssetManagerTest is Test {
         assertEq(manager.getMintedAmount(user1), mintAmount);
         assertEq(manager.getMintableAmount(user1), allowance - mintAmount);
     }
+
+    function testMint_When_Paused() public {
+        uint256 allowance = 1000 * 10**18;
+        manager.setWhitelist(user1, allowance);
+        
+        uint256 mintAmount = 500 * 10**18;
+        
+        vm.prank(user1);
+        vm.expectEmit(true, false, false, true);
+        emit TokensMinted(user1, mintAmount);
+        
+        manager.mint(mintAmount);
+        
+        assertEq(token.balanceOf(user1), mintAmount);
+        assertEq(manager.getMintedAmount(user1), mintAmount);
+        assertEq(manager.getMintableAmount(user1), allowance - mintAmount);
+
+        vm.prank(admin);
+        // Pause the contract
+        manager.pause();
+
+        vm.prank(user1);
+        vm.expectRevert("EnforcedPause()");
+        manager.mint(100 * 10**18);
+        
+        // Recheck previous state
+        assertEq(token.balanceOf(user1), mintAmount);
+        assertEq(manager.getMintedAmount(user1), mintAmount);
+        assertEq(manager.getMintableAmount(user1), allowance - mintAmount);
+    }
+
     
     // Test minting multiple times
     function testMultipleMints() public {

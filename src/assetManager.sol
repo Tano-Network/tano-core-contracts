@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { ISP1Verifier } from "@sp1-contracts/contracts/src/ISP1Verifier.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
 /**
  * @title IMyToken
@@ -29,7 +30,7 @@ struct PublicValuesTx {
  * @title AssetManager
  * @dev Manages user whitelists and orchestrates minting/burning of a specific ERC20 token.
  */
-contract AssetManager is Ownable {
+contract AssetManager is Ownable,Pausable {
     // --- State Variables ---
 
     /// @dev ERC20 token contract being managed
@@ -153,7 +154,7 @@ contract AssetManager is Ownable {
      * The AssetManager contract must have the MINTER_ROLE on the token contract.
      * @param amount The number of tokens to mint.
      */
-    function mint(uint256 amount) external {
+    function mint(uint256 amount) whenNotPaused external {
         WhitelistedUser storage user = whitelist[msg.sender];
         
         require(user.mintAllowance > 0, "AssetManager: You are not whitelisted");
@@ -177,7 +178,7 @@ contract AssetManager is Ownable {
     // add to contract state
     
 
-    function mintWithZk(bytes calldata _proofBytes, bytes calldata _publicValues) external {
+    function mintWithZk(bytes calldata _proofBytes, bytes calldata _publicValues) whenNotPaused external {
         PublicValuesTx memory txResponse = verifyProof(_publicValues, _proofBytes);
         require(txResponse.totalAmount > 0, "AssetManager: Invalid transaction");
 
@@ -221,6 +222,19 @@ contract AssetManager is Ownable {
         emit TokensBurned(msg.sender, amount);
     }
 
+    /**
+     * @dev Pauses the contract, preventing minting operations. Only callable by the owner.
+     */
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /**
+     * @dev Unpauses the contract, allowing normal operations. Only callable by the owner.
+     */
+    function unpause() external onlyOwner {
+        _unpause();
+    }
     // --- View Functions ---
 
     /**
