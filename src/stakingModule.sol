@@ -3,12 +3,14 @@
 pragma solidity ^0.8.20;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
 * @title StakingModule
 * @dev A staking contract with rewards where users deposit ERC20 tokens and earn proportional rewards.
 */
-contract StakingModule {
+contract StakingModule is Ownable, ReentrancyGuard {
     IERC20 public immutable STAKING_TOKEN;
     IERC20 public immutable REWARD_TOKEN;
 
@@ -16,6 +18,7 @@ contract StakingModule {
     uint256 public rewardRatePerSecond; // reward tokens distributed per second across all stakers
     uint256 public lastUpdateTime;
     uint256 public rewardPerTokenStored;
+    uint256 public maxRewardDuration; // maximum duration over which rewards are distributed (in seconds)
 
     mapping(address => uint256) public stakedBalance;
     mapping(address => uint256) public userRewardPerTokenPaid;
@@ -25,12 +28,23 @@ contract StakingModule {
     event Withdrawn(address indexed user, uint256 amount);
     event RewardPaid(address indexed user, uint256 reward);
     event RewardRateUpdated(uint256 newRewardRate);
+    event MaxRewardDurationUpdated(uint256 newDuration);
 
-    constructor(address _stakingToken, address _rewardToken, uint256 _rewardRatePerSecond) {
+    constructor(
+        address _stakingToken,
+        address _rewardToken,
+        uint256 _totalAllocatedRewards,
+        uint256 _initialRewardDuration
+    ) {
         require(_stakingToken != address(0) && _rewardToken != address(0), "Invalid token address");
+        require(_initialRewardDuration > 0, "Reward duration must be greater than zero");
+
         STAKING_TOKEN = IERC20(_stakingToken);
         REWARD_TOKEN = IERC20(_rewardToken);
-        rewardRatePerSecond = _rewardRatePerSecond;
+
+        maxRewardDuration = _initialRewardDuration;
+        rewardRatePerSecond = _totalAllocatedRewards / maxRewardDuration;
+
         lastUpdateTime = block.timestamp;
     }
 
@@ -51,9 +65,8 @@ contract StakingModule {
             return rewardPerTokenStored;
         }
         return
-            rewardPerTokenStored + 
+            rewardPerTokenStored +
             ((block.timestamp - lastUpdateTime) * rewardRatePerSecond * 1e18 / totalStaked);
-
     }
 
     // Calculate the earned rewards for a user
@@ -74,7 +87,7 @@ contract StakingModule {
     }
 
     // Withdraw staked tokens
-    function withdraw(uint256 amount) external updateReward(msg.sender) {
+    function withdraw(uint256 amount) external nonReentrant updateReward(msg.sender) {
         require(amount > 0, "Cannot withdraw 0 tokens");
         require(stakedBalance[msg.sender] >= amount, "Insufficient balance");
 
@@ -85,7 +98,7 @@ contract StakingModule {
     }
 
     // Claim accumulated rewards
-    function claimReward() external updateReward(msg.sender) {
+    function claimReward() external nonReentrant updateReward(msg.sender) {
         uint256 reward = rewards[msg.sender];
         require(reward > 0, "No rewards to claim");
 
@@ -94,18 +107,38 @@ contract StakingModule {
         emit RewardPaid(msg.sender, reward);
     }
 
-    // Update the reward rate
-    function setRewardRate(uint256 newRewardRate) external updateReward(address(0)) {
+    // Update the reward rate with validation against reward token balance
+    function setRewardRate(uint256 newRewardRate) external onlyOwner updateReward(address(0)) {
+        uint256 rewardBalance = REWARD_TOKEN.balanceOf(address(this));
+
+        // Ensure contract has enough reward tokens to cover emissions for maxRewardDuration
+        uint256 requiredRewards = newRewardRate * maxRewardDuration;
+        require(rewardBalance >= requiredRewards, "Insufficient reward token balance for new rate");
+
         rewardRatePerSecond = newRewardRate;
         emit RewardRateUpdated(newRewardRate);
     }
 
-    // View function to get staked balance for user
+    // Update the max reward distribution duration and recalculate reward rate
+    function setMaxRewardDuration(uint256 newDuration) external onlyOwner updateReward(address(0)) {
+        require(newDuration > 0, "Reward duration must be greater than zero");
+        maxRewardDuration = newDuration;
+
+        uint256 rewardBalance = REWARD_TOKEN.balanceOf(address(this));
+        uint256 newRewardRate = rewardBalance / maxRewardDuration;
+
+        rewardRatePerSecond = newRewardRate;
+
+        emit RewardRateUpdated(newRewardRate);
+        emit MaxRewardDurationUpdated(newDuration);
+    }
+
+    // View function to get staked balance for a user
     function getStakedBalance(address user) external view returns (uint256) {
         return stakedBalance[user];
     }
 
-    // View function to get rewards accumulated (not yet claimed)
+    // View function to get rewards accumulated (not yet claimed) for a user
     function getRewards(address user) external view returns (uint256) {
         return earned(user);
     }
