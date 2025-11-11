@@ -31,8 +31,13 @@ struct PublicValuesTx {
  * @dev Manages user whitelists and orchestrates minting/burning of a specific ERC20 token.
  */
 contract AssetManager is Ownable,Pausable {
-    // --- State Variables ---
 
+
+
+    // --- State Variables ---
+    // --- Two-step ownership transfer state ---
+    /// @notice Address proposed to become the new owner. Must call acceptOwnership to complete transfer.
+    address public pendingOwner;
     /// @dev ERC20 token contract being managed
     IMyToken public immutable TOKEN;
 
@@ -76,7 +81,10 @@ contract AssetManager is Ownable,Pausable {
     event TokensBurned(address indexed user, uint256 amount);
     event MintAllowanceIncreased(address indexed user, uint256 amount);
     event MintAllowanceDecreased(address indexed user, uint256 amount);
-
+    // --- Two-step ownership events ---
+    event OwnershipProposed(address indexed currentOwner, address indexed proposedOwner);
+    event OwnershipAccepted(address indexed previousOwner, address indexed newOwner);
+    event OwnershipProposalCancelled(address indexed currentOwner, address indexed cancelledOwner);
     // --- Constructor ---
 
     /**
@@ -327,4 +335,71 @@ contract AssetManager is Ownable,Pausable {
         require(_verifier != address(0), "AssetManager: Invalid verifier address");
         verifier = _verifier;
     }
+
+
+    function renounceOwnership() public view override onlyOwner {
+    revert("AssetManager: renounceOwnership disabled");
+    }
+
+    /**
+     * @notice Propose a new owner. The proposed owner must call `acceptOwnership` to complete the transfer.
+     * @dev Only callable by the current owner.
+     * @param _proposedOwner Address being proposed as the new owner.
+     */
+    function proposeNewOwner(address _proposedOwner) external onlyOwner {
+        require(_proposedOwner != address(0), "AssetManager: proposed owner is the zero address");
+        require(_proposedOwner != owner(), "AssetManager: already the owner");
+
+        pendingOwner = _proposedOwner;
+
+        emit OwnershipProposed(owner(), _proposedOwner);
+    }
+
+    /**
+     * @notice Accept ownership after being proposed.
+     * @dev Caller must be the pending owner. Completes the ownership transfer.
+     */
+    function acceptOwnership() external {
+        address _pending = pendingOwner;
+        require(_pending != address(0), "AssetManager: no pending owner");
+        require(msg.sender == _pending, "AssetManager: caller is not the pending owner");
+
+        address previousOwner = owner();
+
+    // Clear pending owner before transferring ownership to avoid reentrancy issues
+    pendingOwner = address(0);
+
+    // Use OpenZeppelin Ownable's internal transfer hook
+    _transferOwnership(msg.sender);
+
+    emit OwnershipAccepted(previousOwner, msg.sender);
+    }
+
+    /**
+     * @notice Cancel an outstanding ownership proposal.
+     * @dev Only callable by the current owner.
+     */
+    function cancelOwnershipProposal() external onlyOwner {
+        address _pending = pendingOwner;
+        require(_pending != address(0), "AssetManager: no pending owner");
+
+        // Clear pending owner
+        pendingOwner = address(0);
+
+        emit OwnershipProposalCancelled(owner(), _pending);
+    }
+
+    /**
+     * @dev Override OpenZeppelin's transferOwnership to disable one-step transfers.
+     * Users must use the propose/accept flow instead.
+     */
+    function transferOwnership(address) public override view onlyOwner {
+        revert("AssetManager: use proposeNewOwner + acceptOwnership instead");
+    }
+
+    /**
+     * @dev Internal helper to transfer ownership using Ownable's internal state.
+     * We intentionally avoid calling Ownable.transferOwnership to keep one-step disabled.
+     */
+    // note: we rely on OpenZeppelin Ownable's internal `_transferOwnership(address)` implementation
 }

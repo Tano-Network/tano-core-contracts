@@ -16,6 +16,9 @@ contract AssetManagerTest is Test {
     event UserWhitelisted(address indexed user, uint256 allowance);
     event TokensMinted(address indexed user, uint256 amount);
     event TokensBurned(address indexed user, uint256 amount);
+    event OwnershipProposed(address indexed currentOwner, address indexed proposedOwner);
+    event OwnershipAccepted(address indexed previousOwner, address indexed newOwner);
+    event OwnershipProposalCancelled(address indexed currentOwner, address indexed cancelledOwner);
     
     function setUp() public {
         admin = address(this);
@@ -280,19 +283,71 @@ contract AssetManagerTest is Test {
     
     // Test ownership transfer
     function testOwnershipTransfer() public {
-        // Transfer ownership
+        // One-step transferOwnership should be disabled in AssetManager
+        vm.expectRevert("AssetManager: use proposeNewOwner + acceptOwnership instead");
         manager.transferOwnership(user1);
-        
-        // Check new owner
+    }
+
+    // Test propose/accept ownership happy path
+    function testProposeAndAcceptOwnership() public {
+        // Admin proposes user1
+        vm.expectEmit(true, false, false, true);
+        emit OwnershipProposed(admin, user1);
+        manager.proposeNewOwner(user1);
+
+        // pendingOwner should be user1
+        assertEq(manager.pendingOwner(), user1);
+
+        // Only pending owner can accept
+        vm.prank(user2);
+        vm.expectRevert("AssetManager: caller is not the pending owner");
+        manager.acceptOwnership();
+
+        // user1 accepts
+        vm.prank(user1);
+        vm.expectEmit(true, false, false, true);
+        emit OwnershipAccepted(admin, user1);
+        manager.acceptOwnership();
+
+        // Owner should now be user1 and pending cleared
         assertEq(manager.owner(), user1);
-        
+        assertEq(manager.pendingOwner(), address(0));
+
         // New owner can whitelist
         vm.prank(user1);
         manager.setWhitelist(user2, 1000 * 10**18);
-        
-        // Old owner cannot whitelist
-        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", admin));
-        manager.setWhitelist(user1, 1000 * 10**18);
+    }
+
+    // Test cancel ownership proposal
+    function testCancelOwnershipProposal() public {
+        // Admin proposes user1
+        manager.proposeNewOwner(user1);
+
+        // Admin cancels
+        vm.expectEmit(true, false, false, true);
+        emit OwnershipProposalCancelled(admin, user1);
+        manager.cancelOwnershipProposal();
+
+        // pendingOwner should be cleared
+        assertEq(manager.pendingOwner(), address(0));
+
+        // user1 cannot accept after cancellation
+        vm.prank(user1);
+        vm.expectRevert("AssetManager: no pending owner");
+        manager.acceptOwnership();
+    }
+
+    // Test proposing zero address reverts
+    function test_RevertWhen_ProposeZeroAddress() public {
+        vm.expectRevert("AssetManager: proposed owner is the zero address");
+        manager.proposeNewOwner(address(0));
+    }
+
+    // Test non-owner cannot propose
+    function test_RevertWhen_NonOwnerProposes() public {
+        vm.prank(user1);
+        vm.expectRevert(abi.encodeWithSignature("OwnableUnauthorizedAccount(address)", user1));
+        manager.proposeNewOwner(user2);
     }
 
     // Test ZK minted amount
