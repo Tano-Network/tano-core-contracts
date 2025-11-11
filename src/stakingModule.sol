@@ -2,15 +2,16 @@
 
 pragma solidity ^0.8.20;
 
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
  * @title StakingModule
  * @dev Staking contract with reward period control, separate withdrawal and claim, protected by ownership and reentrancy guard.
  */
 contract StakingModule is Ownable, ReentrancyGuard {
+    using SafeERC20 for IERC20;
     IERC20 public immutable STAKING_TOKEN;
     IERC20 public immutable REWARD_TOKEN;
 
@@ -79,7 +80,7 @@ contract StakingModule is Ownable, ReentrancyGuard {
     // Stake tokens
     function deposit(uint256 amount) external updateReward(msg.sender) {
         require(amount > 0, "Cannot stake 0 tokens");
-        require(STAKING_TOKEN.transferFrom(msg.sender, address(this), amount), "Stake transfer failed");
+        STAKING_TOKEN.safeTransferFrom(msg.sender, address(this), amount);
 
         stakedBalance[msg.sender] += amount;
         totalStaked += amount;
@@ -92,7 +93,7 @@ contract StakingModule is Ownable, ReentrancyGuard {
 
         stakedBalance[msg.sender] -= amount;
         totalStaked -= amount;
-        require(STAKING_TOKEN.transfer(msg.sender, amount), "Withdraw transfer failed");
+        STAKING_TOKEN.safeTransfer(msg.sender, amount);
 
         emit Withdrawn(msg.sender, amount);
     }
@@ -102,7 +103,7 @@ contract StakingModule is Ownable, ReentrancyGuard {
         require(reward > 0, "No rewards to claim");
 
         rewards[msg.sender] = 0;
-        require(REWARD_TOKEN.transfer(msg.sender, reward), "Reward transfer failed");
+        REWARD_TOKEN.safeTransfer(msg.sender, reward);
 
         emit RewardPaid(msg.sender, reward);
     }
@@ -140,7 +141,7 @@ contract StakingModule is Ownable, ReentrancyGuard {
     require(totalStaked == 0, "Cannot recover while stakers active");
     require(REWARD_TOKEN.balanceOf(address(this)) >= amount, "Insufficient reward token balance");
 
-        require(REWARD_TOKEN.transfer(msg.sender, amount), "Recovery transfer failed");
+        REWARD_TOKEN.safeTransfer(msg.sender, amount);
     }
 
 }
