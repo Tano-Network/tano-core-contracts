@@ -34,7 +34,7 @@ contract StakingModule is Ownable, ReentrancyGuard {
     event PeriodFinishUpdated(uint256 periodFinish);
 
     uint256 public constant REWARD_DURATION = 90 days; // Initial reward duration (can be changed if needed)
-
+    // Constructor to initialize staking and reward tokens
     constructor(
         address _stakingToken,
         address _rewardToken
@@ -46,7 +46,7 @@ contract StakingModule is Ownable, ReentrancyGuard {
         lastUpdateTime = block.timestamp;
         periodFinish = block.timestamp;
     }
-
+    // Modifier to update reward for an account
     modifier updateReward(address account) {
         rewardPerTokenStored = rewardPerToken();
         lastUpdateTime = lastTimeRewardApplicable();
@@ -56,11 +56,11 @@ contract StakingModule is Ownable, ReentrancyGuard {
         }
         _;
     }
-
+    // Get the last time reward is applicable
     function lastTimeRewardApplicable() public view returns (uint256) {
         return block.timestamp < periodFinish ? block.timestamp : periodFinish;
     }
-
+    // Calculate reward per token
     function rewardPerToken() public view returns (uint256) {
         if (totalStaked == 0) {
             return rewardPerTokenStored;
@@ -70,12 +70,13 @@ contract StakingModule is Ownable, ReentrancyGuard {
             ((lastTimeRewardApplicable() - lastUpdateTime) * rewardRatePerSecond * 1e18 / totalStaked);
     }
 
+    // Calculate earned rewards for an account
     function earned(address account) public view returns (uint256) {
         return
             ((stakedBalance[account] * (rewardPerToken() - userRewardPerTokenPaid[account])) / 1e18) +
             rewards[account];
     }
-
+    // Stake tokens
     function deposit(uint256 amount) external updateReward(msg.sender) {
         require(amount > 0, "Cannot stake 0 tokens");
         require(STAKING_TOKEN.transferFrom(msg.sender, address(this), amount), "Stake transfer failed");
@@ -84,7 +85,7 @@ contract StakingModule is Ownable, ReentrancyGuard {
         totalStaked += amount;
         emit Staked(msg.sender, amount);
     }
-
+    // Withdraw staked tokens
     function withdraw(uint256 amount) external nonReentrant updateReward(msg.sender) {
         require(amount > 0, "Cannot withdraw 0 tokens");
         require(stakedBalance[msg.sender] >= amount, "Insufficient balance");
@@ -95,7 +96,7 @@ contract StakingModule is Ownable, ReentrancyGuard {
 
         emit Withdrawn(msg.sender, amount);
     }
-
+    // Claim accumulated rewards
     function claimReward() external nonReentrant updateReward(msg.sender) {
         uint256 reward = rewards[msg.sender];
         require(reward > 0, "No rewards to claim");
@@ -127,8 +128,21 @@ contract StakingModule is Ownable, ReentrancyGuard {
     function getStakedBalance(address account) external view returns (uint256) {
         return stakedBalance[account];
     }
-
+    // View function to get earned rewards
     function getRewards(address account) external view returns (uint256) {
         return earned(account);
     }
+    /**
+     * @notice Owner can recover unclaimed reward tokens if there are no active stakers.
+     * @param amount The amount of reward tokens to recover.
+     */
+    function recoverUnclaimedRewards(uint256 amount) external onlyOwner {
+    require(totalStaked == 0, "Cannot recover while stakers active");
+    require(REWARD_TOKEN.balanceOf(address(this)) >= amount, "Insufficient reward token balance");
+
+        require(REWARD_TOKEN.transfer(msg.sender, amount), "Recovery transfer failed");
+    }
+
 }
+
+
