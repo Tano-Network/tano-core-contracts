@@ -73,6 +73,8 @@ contract AssetManager is Ownable {
     event UserWhitelisted(address indexed user, uint256 allowance);
     event TokensMinted(address indexed user, uint256 amount);
     event TokensBurned(address indexed user, uint256 amount);
+    event MintAllowanceIncreased(address indexed user, uint256 amount);
+    event MintAllowanceDecreased(address indexed user, uint256 amount);
 
     // --- Constructor ---
 
@@ -102,6 +104,7 @@ contract AssetManager is Ownable {
      */
     function setWhitelist(address user, uint256 allowance) external onlyOwner {
         require(user != address(0), "AssetManager: Cannot whitelist the zero address");
+        require(whitelist[user].mintAllowance == 0, "AssetManager: User already whitelisted");
 
         whitelist[user] = WhitelistedUser({
             mintAllowance: allowance,
@@ -110,6 +113,38 @@ contract AssetManager is Ownable {
 
         emit UserWhitelisted(user, allowance);
     }
+
+    /**
+     * @dev Increases a user's minting allowance. Only callable by the owner.
+     * @param user The address of the user.
+     * @param amount The amount to increase the allowance by.
+     */
+
+    function increaseMintAllowance(address user, uint256 amount) external onlyOwner {
+        require(user != address(0), "AssetManager: Cannot whitelist the zero address");
+
+        WhitelistedUser storage whitelistedUser = whitelist[user];
+        whitelistedUser.mintAllowance += amount;
+
+        emit MintAllowanceIncreased(user, whitelistedUser.mintAllowance);
+    }
+
+    /**
+     * @dev Decreases a user's minting allowance. Only callable by the owner.
+     * @param user The address of the user.
+     * @param amount The amount to decrease the allowance by.
+     */
+    function decreaseMintAllowance(address user, uint256 amount) external onlyOwner {
+        require(user != address(0), "AssetManager: Cannot whitelist the zero address");
+
+        WhitelistedUser storage whitelistedUser = whitelist[user];
+        require(whitelistedUser.mintAllowance >= amount, "AssetManager: Decrease exceeds allowance");
+        whitelistedUser.mintAllowance -= amount;
+
+        emit MintAllowanceDecreased(user, whitelistedUser.mintAllowance);
+    }
+
+
 
     // --- Core Functions ---
 
