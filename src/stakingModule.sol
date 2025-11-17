@@ -16,6 +16,9 @@ contract StakingModule is Ownable, ReentrancyGuard {
     IERC20 public immutable REWARD_TOKEN;
 
     uint256 public totalStaked;
+    uint256 public rewardRatePerSecond; // reward tokens distributed per second across all stakers
+    uint256 public lastUpdateTime;
+    uint256 public rewardPerTokenStored;
 
     uint256 public rewardRatePerSecond; // reward tokens distributed per second
     uint256 public lastUpdateTime;

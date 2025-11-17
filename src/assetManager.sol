@@ -3,6 +3,7 @@ pragma solidity ^0.8.20;
 
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { ISP1Verifier } from "@sp1-contracts/contracts/src/ISP1Verifier.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 
 /**
  * @title IMyToken
@@ -29,9 +30,14 @@ struct PublicValuesTx {
  * @title AssetManager
  * @dev Manages user whitelists and orchestrates minting/burning of a specific ERC20 token.
  */
-contract AssetManager is Ownable {
-    // --- State Variables ---
+contract AssetManager is Ownable,Pausable {
 
+
+
+    // --- State Variables ---
+    // --- Two-step ownership transfer state ---
+    /// @notice Address proposed to become the new owner. Must call acceptOwnership to complete transfer.
+    address public pendingOwner;
     /// @dev ERC20 token contract being managed
     IMyToken public immutable TOKEN;
 
@@ -73,7 +79,12 @@ contract AssetManager is Ownable {
     event UserWhitelisted(address indexed user, uint256 allowance);
     event TokensMinted(address indexed user, uint256 amount);
     event TokensBurned(address indexed user, uint256 amount);
-
+    event MintAllowanceIncreased(address indexed user, uint256 amount);
+    event MintAllowanceDecreased(address indexed user, uint256 amount);
+    // --- Two-step ownership events ---
+    event OwnershipProposed(address indexed currentOwner, address indexed proposedOwner);
+    event OwnershipAccepted(address indexed previousOwner, address indexed newOwner);
+    event OwnershipProposalCancelled(address indexed currentOwner, address indexed cancelledOwner);
     // --- Constructor ---
 
     /**
@@ -102,6 +113,7 @@ contract AssetManager is Ownable {
      */
     function setWhitelist(address user, uint256 allowance) external onlyOwner {
         require(user != address(0), "AssetManager: Cannot whitelist the zero address");
+        require(whitelist[user].mintAllowance == 0, "AssetManager: User already whitelisted");
 
         whitelist[user] = WhitelistedUser({
             mintAllowance: allowance,
@@ -111,6 +123,38 @@ contract AssetManager is Ownable {
         emit UserWhitelisted(user, allowance);
     }
 
+    /**
+     * @dev Increases a user's minting allowance. Only callable by the owner.
+     * @param user The address of the user.
+     * @param amount The amount to increase the allowance by.
+     */
+
+    function increaseMintAllowance(address user, uint256 amount) external onlyOwner {
+        require(user != address(0), "AssetManager: Cannot whitelist the zero address");
+
+        WhitelistedUser storage whitelistedUser = whitelist[user];
+        whitelistedUser.mintAllowance += amount;
+
+        emit MintAllowanceIncreased(user, whitelistedUser.mintAllowance);
+    }
+
+    /**
+     * @dev Decreases a user's minting allowance. Only callable by the owner.
+     * @param user The address of the user.
+     * @param amount The amount to decrease the allowance by.
+     */
+    function decreaseMintAllowance(address user, uint256 amount) external onlyOwner {
+        require(user != address(0), "AssetManager: Cannot whitelist the zero address");
+
+        WhitelistedUser storage whitelistedUser = whitelist[user];
+        require(whitelistedUser.mintAllowance >= amount, "AssetManager: Decrease exceeds allowance");
+        whitelistedUser.mintAllowance -= amount;
+
+        emit MintAllowanceDecreased(user, whitelistedUser.mintAllowance);
+    }
+
+
+
     // --- Core Functions ---
 
     /**
@@ -118,7 +162,7 @@ contract AssetManager is Ownable {
      * The AssetManager contract must have the MINTER_ROLE on the token contract.
      * @param amount The number of tokens to mint.
      */
-    function mint(uint256 amount) external {
+    function mint(uint256 amount) whenNotPaused external {
         WhitelistedUser storage user = whitelist[msg.sender];
         
         require(user.mintAllowance > 0, "AssetManager: You are not whitelisted");
@@ -142,7 +186,7 @@ contract AssetManager is Ownable {
     // add to contract state
     
 
-    function mintWithZk(bytes calldata _proofBytes, bytes calldata _publicValues) external {
+    function mintWithZk(bytes calldata _proofBytes, bytes calldata _publicValues) whenNotPaused external {
         PublicValuesTx memory txResponse = verifyProof(_publicValues, _proofBytes);
         require(txResponse.totalAmount > 0, "AssetManager: Invalid transaction");
 
@@ -186,6 +230,19 @@ contract AssetManager is Ownable {
         emit TokensBurned(msg.sender, amount);
     }
 
+    /**
+     * @dev Pauses the contract, preventing minting operations. Only callable by the owner.
+     */
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /**
+     * @dev Unpauses the contract, allowing normal operations. Only callable by the owner.
+     */
+    function unpause() external onlyOwner {
+        _unpause();
+    }
     // --- View Functions ---
 
     /**
@@ -278,4 +335,71 @@ contract AssetManager is Ownable {
         require(_verifier != address(0), "AssetManager: Invalid verifier address");
         verifier = _verifier;
     }
+
+
+    function renounceOwnership() public view override onlyOwner {
+    revert("AssetManager: renounceOwnership disabled");
+    }
+
+    /**
+     * @notice Propose a new owner. The proposed owner must call `acceptOwnership` to complete the transfer.
+     * @dev Only callable by the current owner.
+     * @param _proposedOwner Address being proposed as the new owner.
+     */
+    function proposeNewOwner(address _proposedOwner) external onlyOwner {
+        require(_proposedOwner != address(0), "AssetManager: proposed owner is the zero address");
+        require(_proposedOwner != owner(), "AssetManager: already the owner");
+
+        pendingOwner = _proposedOwner;
+
+        emit OwnershipProposed(owner(), _proposedOwner);
+    }
+
+    /**
+     * @notice Accept ownership after being proposed.
+     * @dev Caller must be the pending owner. Completes the ownership transfer.
+     */
+    function acceptOwnership() external {
+        address _pending = pendingOwner;
+        require(_pending != address(0), "AssetManager: no pending owner");
+        require(msg.sender == _pending, "AssetManager: caller is not the pending owner");
+
+        address previousOwner = owner();
+
+    // Clear pending owner before transferring ownership to avoid reentrancy issues
+    pendingOwner = address(0);
+
+    // Use OpenZeppelin Ownable's internal transfer hook
+    _transferOwnership(msg.sender);
+
+    emit OwnershipAccepted(previousOwner, msg.sender);
+    }
+
+    /**
+     * @notice Cancel an outstanding ownership proposal.
+     * @dev Only callable by the current owner.
+     */
+    function cancelOwnershipProposal() external onlyOwner {
+        address _pending = pendingOwner;
+        require(_pending != address(0), "AssetManager: no pending owner");
+
+        // Clear pending owner
+        pendingOwner = address(0);
+
+        emit OwnershipProposalCancelled(owner(), _pending);
+    }
+
+    /**
+     * @dev Override OpenZeppelin's transferOwnership to disable one-step transfers.
+     * Users must use the propose/accept flow instead.
+     */
+    function transferOwnership(address) public override view onlyOwner {
+        revert("AssetManager: use proposeNewOwner + acceptOwnership instead");
+    }
+
+    /**
+     * @dev Internal helper to transfer ownership using Ownable's internal state.
+     * We intentionally avoid calling Ownable.transferOwnership to keep one-step disabled.
+     */
+    // note: we rely on OpenZeppelin Ownable's internal `_transferOwnership(address)` implementation
 }
