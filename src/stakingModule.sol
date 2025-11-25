@@ -5,7 +5,7 @@ pragma solidity ^0.8.20;
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 /**
  * @title StakingModule
  * @dev Staking contract with reward period control, separate withdrawal and claim, protected by ownership and reentrancy guard.
@@ -20,30 +20,28 @@ contract StakingModule is Ownable, ReentrancyGuard {
     uint256 public lastUpdateTime;
     uint256 public rewardPerTokenStored;
 
-    uint256 public rewardRatePerSecond; // reward tokens distributed per second
-    uint256 public lastUpdateTime;
-    uint256 public rewardPerTokenStored;
-
     uint256 public periodFinish;
+    address public pendingOwner;
 
     mapping(address => uint256) public stakedBalance;
     mapping(address => uint256) public userRewardPerTokenPaid;
     mapping(address => uint256) public rewards;
 
+    event OwnershipTransferStarted(address indexed currentOwner, address indexed pendingOwner);
     event Staked(address indexed user, uint256 amount);
     event Withdrawn(address indexed user, uint256 amount);
     event RewardPaid(address indexed user, uint256 reward);
     event RewardAdded(uint256 reward);
     event RewardRateUpdated(uint256 rewardRatePerSecond);
     event PeriodFinishUpdated(uint256 periodFinish);
-
-    uint256 public constant REWARD_DURATION = 90 days; // Initial reward duration (can be changed if needed)
+    event RewardDurationUpdated(uint256 newDuration);
+    uint256 public  REWARD_DURATION = 90 days; // Initial reward duration (can be changed if needed)
     // Constructor to initialize staking and reward tokens
-    constructor(
-        address _stakingToken,
-        address _rewardToken
-    ) {
-        require(_stakingToken != address(0) && _rewardToken != address(0), "Invalid token address");
+        constructor(
+            address _stakingToken,
+            address _rewardToken
+        ) Ownable(msg.sender) {
+            require(_stakingToken != address(0) && _rewardToken != address(0), "Invalid token address");
 
         STAKING_TOKEN = IERC20(_stakingToken);
         REWARD_TOKEN = IERC20(_rewardToken);
@@ -112,12 +110,16 @@ contract StakingModule is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice Owner can notify the contract of a new reward amount to distribute over REWARD_DURATION.
-     * Sets new reward rate and updates periodFinish.
+     * @notice Owner supplies a new reward amount (pulled from owner) to distribute over REWARD_DURATION.
+     * Requires previous period complete, then transfers tokens in and sets new reward rate.
      */
     function notifyRewardAmount(uint256 reward) external onlyOwner updateReward(address(0)) {
         require(block.timestamp >= periodFinish, "Previous period must be complete");
-        require(REWARD_TOKEN.balanceOf(address(this)) >= reward, "Insufficient reward tokens");
+        require(reward > 0, "Reward must be > 0");
+        require(totalStaked > 0, "No stakers available"); // <-- moved/added check to prevent setting rewards when no stakers
+
+        // Pull reward tokens from the owner (must have approved this contract)
+        REWARD_TOKEN.safeTransferFrom(msg.sender, address(this), reward);
 
         rewardRatePerSecond = reward / REWARD_DURATION;
         lastUpdateTime = block.timestamp;
@@ -141,12 +143,33 @@ contract StakingModule is Ownable, ReentrancyGuard {
      * @param amount The amount of reward tokens to recover.
      */
     function recoverUnclaimedRewards(uint256 amount) external onlyOwner {
-    require(totalStaked == 0, "Cannot recover while stakers active");
-    require(REWARD_TOKEN.balanceOf(address(this)) >= amount, "Insufficient reward token balance");
-
+        require(totalStaked == 0, "Cannot recover while staking is active");
         REWARD_TOKEN.safeTransfer(msg.sender, amount);
     }
 
+
+ function transferOwnership(address newOwner) public override onlyOwner {
+        require(newOwner != address(0), "Zero address");
+        pendingOwner = newOwner;
+        emit OwnershipTransferStarted(owner(), newOwner);
+    }
+
+    function acceptOwnership() external {
+        require(msg.sender == pendingOwner, "Not pending owner");
+        _transferOwnership(pendingOwner);
+        pendingOwner = address(0);
+    }
+
+    function renounceOwnership() public view override onlyOwner {
+        revert("Renounce disabled");
+    }
+
+    function setRewardDuration(uint256 newDuration) external onlyOwner {
+        require(newDuration > 0, "Duration 0");
+        require(block.timestamp >= periodFinish, "Ongoing period");
+        REWARD_DURATION = newDuration;
+        emit RewardDurationUpdated(newDuration);
+    }
 }
 
 

@@ -11,7 +11,8 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 contract TanoFactory is Ownable {
     address[] public deployedAssetManagers;
     mapping(address => address) public tokensToManagers;
-
+    address public pendingOwner;
+    event OwnershipTransferStarted(address indexed currentOwner, address indexed pendingOwner);
     event AssetManagerCreated(address indexed managerAddress, address indexed owner, address indexed tokenAddress);
 
 
@@ -55,7 +56,19 @@ contract TanoFactory is Ownable {
         return deployedAssetManagers[index];
     }
 
-    function transferFactoryOwnership(address newOwner) external onlyOwner {
-        transferOwnership(newOwner);
+  function transferOwnership(address newOwner) public override onlyOwner {
+        require(newOwner != address(0), "Zero address");
+        pendingOwner = newOwner;
+        emit OwnershipTransferStarted(owner(), newOwner);
+    }
+
+    function acceptOwnership() external {
+        require(msg.sender == pendingOwner, "Not pending owner");
+        _transferOwnership(pendingOwner);
+        pendingOwner = address(0);
+    }
+
+    function renounceOwnership() public view override onlyOwner {
+        revert("Renounce disabled");
     }
 }

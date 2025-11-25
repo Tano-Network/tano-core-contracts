@@ -3,7 +3,9 @@ pragma solidity ^0.8.20;
 
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { ERC20Burnable } from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
+import { AccessControlEnumerable } from "@openzeppelin/contracts/access/extensions/AccessControlEnumerable.sol";
 import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
+import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.sol";
 
 /**
  * @title TAsset
@@ -12,7 +14,7 @@ import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol"
  * - MINTER_ROLE is created to gate the minting functionality.
  * - Prevents last admin from renouncing its admin role to avoid locked state.
  */
-contract TAsset is ERC20, ERC20Burnable, AccessControl {
+contract TAsset is ERC20, ERC20Burnable, AccessControlEnumerable {
     bytes32 public constant MINTER_ROLE = keccak256("MINTER_ROLE");
 
     constructor(string memory name, string memory symbol) ERC20(name, symbol) {
@@ -39,9 +41,9 @@ contract TAsset is ERC20, ERC20Burnable, AccessControl {
 
     /**
      * @dev Overrides renounceRole to prevent the last admin from renouncing DEFAULT_ADMIN_ROLE,
-     * which would leave the contract without any admin.
+    function renounceRole(bytes32 role, address account) public virtual override(AccessControl, IAccessControl) {
      */
-    function renounceRole(bytes32 role, address account) public virtual override {
+    function renounceRole(bytes32 role, address account) public virtual override(AccessControl, IAccessControl) {
         if (role == DEFAULT_ADMIN_ROLE && account == msg.sender) {
             require(getRoleMemberCount(DEFAULT_ADMIN_ROLE) > 1,
                 "TAsset: cannot renounce last admin role");
