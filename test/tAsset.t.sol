@@ -63,7 +63,7 @@ contract TAssetTest is Test {
         vm.startPrank(user);
         
         // Expect the next call to revert with this specific error message
-        vm.expectRevert("MyToken: caller is not a minter");
+        vm.expectRevert("TAsset: caller is not a minter");
         token.mint(user, 1000);
         vm.stopPrank();
     }
@@ -158,14 +158,14 @@ contract TAssetTest is Test {
         assertFalse(token.hasRole(minterRole, minter));
         
         vm.prank(minter);
-        vm.expectRevert("MyToken: caller is not a minter");
+        vm.expectRevert("TAsset: caller is not a minter");
         token.mint(user, 100);
     }
     
     // Test non-admin cannot grant minter role with specific error message
     function test_RevertWhen_NonAdminGrantsMinterRole() public {
         vm.prank(user);
-        vm.expectRevert("MyToken: caller is not an admin");
+        vm.expectRevert("TAsset: caller is not an admin");
         token.grantMinterRole(minter);
     }
 }

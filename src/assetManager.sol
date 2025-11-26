@@ -337,7 +337,7 @@ contract AssetManager is Ownable,Pausable {
     }
 
 
-    function renounceOwnership() public view override onlyOwner {
+    function renounceOwnership() public override onlyOwner {
     revert("AssetManager: renounceOwnership disabled");
     }
 

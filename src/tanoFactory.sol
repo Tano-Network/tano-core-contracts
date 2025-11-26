@@ -68,7 +68,7 @@ contract TanoFactory is Ownable {
         pendingOwner = address(0);
     }
 
-    function renounceOwnership() public view override onlyOwner {
+    function renounceOwnership() public override onlyOwner {
         revert("Renounce disabled");
     }
 }

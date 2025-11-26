@@ -9,7 +9,7 @@ import { IAccessControl } from "@openzeppelin/contracts/access/IAccessControl.so
 
 /**
  * @title TAsset
- * @dev An ERC20 token with role-based access control for minting.
+ * @dev An ERC20 token with role-basedx access control for minting.
  * - The deployer is granted DEFAULT_ADMIN_ROLE.
  * - MINTER_ROLE is created to gate the minting functionality.
  * - Prevents last admin from renouncing its admin role to avoid locked state.
