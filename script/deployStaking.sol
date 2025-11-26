@@ -10,10 +10,11 @@ contract DeployScript is Script {
 
     address stakingToken = 0x46507E8929Fe9C20c8914fc9036829F6e7740D9D; // Replace with actual factory address
     address rewardToken = 0x46507E8929Fe9C20c8914fc9036829F6e7740D9D; // Replace with actual reward token address
+    address ownerAddress = 0x46507E8929Fe9C20c8914fc9036829F6e7740D9D; // Replace with actual owner address
 function run() external returns (address) {
         vm.startBroadcast();
         // Deploy the token contract
-        StakingModule staking = new StakingModule(stakingToken, rewardToken);
+        StakingModule staking = new StakingModule(stakingToken, rewardToken, ownerAddress);
         vm.stopBroadcast();
         return (address(staking));
 }

@@ -39,8 +39,9 @@ contract StakingModule is Ownable, ReentrancyGuard {
     // Constructor to initialize staking and reward tokens
         constructor(
             address _stakingToken,
-            address _rewardToken
-        ) Ownable(msg.sender) {
+            address _rewardToken,
+            address ownerAddress
+        ) Ownable(ownerAddress) {
             require(_stakingToken != address(0) && _rewardToken != address(0), "Invalid token address");
 
         STAKING_TOKEN = IERC20(_stakingToken);
@@ -138,14 +139,7 @@ contract StakingModule is Ownable, ReentrancyGuard {
     function getRewards(address account) external view returns (uint256) {
         return earned(account);
     }
-    /**
-     * @notice Owner can recover unclaimed reward tokens if there are no active stakers.
-     * @param amount The amount of reward tokens to recover.
-     */
-    function recoverUnclaimedRewards(uint256 amount) external onlyOwner {
-        require(totalStaked == 0, "Cannot recover while staking is active");
-        REWARD_TOKEN.safeTransfer(msg.sender, amount);
-    }
+
 
 
  function transferOwnership(address newOwner) public override onlyOwner {
